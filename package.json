@@ -9,6 +9,8 @@
   "scripts": {
     "start": "node src/index.mjs",
     "setup": "node setup-wizard.mjs",
+    "analytics": "node scripts/analytics.mjs",
+    "recent": "node scripts/analytics.mjs recent",
     "install-service": "node scripts/install-autostart.mjs",
     "postinstall": "patch-package"
   },
