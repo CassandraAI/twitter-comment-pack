@@ -7,7 +7,12 @@ import { requestTelegramApproval } from '../lib/approval.mjs';
 import { detectLanguage } from '../lib/language.mjs';
 import { generateCommentOptions } from '../lib/ai-commenter.mjs';
 import { scoreTweet } from '../lib/tweet-scoring.mjs';
-import { alreadyCommented, markCommented } from '../lib/store.mjs';
+import {
+  alreadyCommented,
+  markCommented,
+  recordPostedReply,
+  recordSkippedCandidate,
+} from '../lib/store.mjs';
 import { waitForSlot, postSleep } from '../lib/rate-limiter.mjs';
 import { sendAlert } from '../lib/telegram.mjs';
 
@@ -30,6 +35,13 @@ export async function runListMode(cfg, log) {
         if (alreadyCommented(t.id)) continue;
         const scored = scoreTweet(t, cfg);
         if (scored.shouldSkip) {
+          recordSkippedCandidate({
+            tweetId: t.id,
+            author: t.author,
+            score: scored.score,
+            reason: scored.reason,
+            sourceText: t.fullText,
+          });
           log(`[mode-A] skip ${t.id} @${t.author} score=${scored.score}: ${scored.reason}`);
           continue;
         }
@@ -85,15 +97,33 @@ export async function runListMode(cfg, log) {
       continue;
     }
     if (approval.action !== 'post') {
+      recordSkippedCandidate({
+        tweetId: t.id,
+        author: t.author,
+        score: t.score,
+        reason: `${approval.source}: ${t.scoreReason}`,
+        sourceText: t.fullText,
+      });
       log(`[mode-A] skipped ${t.id} @${t.author} by ${approval.source}`);
       continue;
     }
 
     const comment = approval.comment || options[0];
     try {
-      await postTweet(comment, cfg.cookiesFile, { replyToId: t.id });
+      const replyTweetId = await postTweet(comment, cfg.cookiesFile, { replyToId: t.id });
       markCommented(t.id, t.author);
-      log(`[mode-A] OK reply ${t.id} @${t.author} score=${t.score} lang=${lang} "${comment.slice(0, 60)}..."`);
+      recordPostedReply({
+        sourceTweetId: t.id,
+        replyTweetId,
+        author: t.author,
+        lang,
+        score: t.score,
+        scoreReason: t.scoreReason,
+        optionIndex: approval.optionIndex,
+        replyText: comment,
+        sourceText: t.fullText,
+      });
+      log(`[mode-A] OK reply ${t.id} @${t.author} reply=${replyTweetId} score=${t.score} lang=${lang} "${comment.slice(0, 60)}..."`);
     } catch (e) {
       log(`[mode-A] post fail ${t.id}: ${e.message}`);
       if (/RATE_LIMITED/.test(e.message)) {
