@@ -1,0 +1,36 @@
+{
+  "cookiesFile": "data/cookies.json",
+  "telegram": {
+    "botToken": "YOUR_TELEGRAM_BOT_TOKEN",
+    "chatId": "YOUR_TELEGRAM_CHAT_ID"
+  },
+  "approval": {
+    "enabled": true,
+    "mode": "telegram",
+    "timeoutMs": 600000,
+    "optionsCount": 3
+  },
+  "mode": "A",
+  "modeA": {
+    "listIds": ["YOUR_X_LIST_ID"],
+    "language": "auto",
+    "stylePrompt": "crypto macro meme account; witty, short, no shill, no links, no financial advice, no political misinformation"
+  },
+  "modeB": {
+    "ownerUsername": "",
+    "hashtags": ["#Crypto", "#Bitcoin", "#Ethereum", "#Solana"],
+    "crossPostListId": ""
+  },
+  "scoring": {
+    "minScore": 45,
+    "maxCandidatesPerCycle": 10
+  },
+  "commentsPerHour": 5,
+  "delayMinMs": 60000,
+  "delayMaxMs": 240000,
+  "ai": {
+    "provider": "deepseek",
+    "apiKey": "YOUR_DEEPSEEK_API_KEY",
+    "model": "deepseek-chat"
+  }
+}
