@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node src/index.mjs",
     "setup": "node setup-wizard.mjs",
+    "doctor": "node scripts/doctor.mjs",
     "analytics": "node scripts/analytics.mjs",
     "recent": "node scripts/analytics.mjs recent",
     "install-service": "node scripts/install-autostart.mjs",
