@@ -1,11 +1,12 @@
 /**
- * Mode A — crawl one or more lists, generate reply candidates, then either
- * post directly or ask for Telegram approval depending on config.approval.
+ * Mode A — crawl one or more lists, score/filter candidates, generate reply
+ * options, then either post directly or ask for Telegram approval.
  */
 import { fetchListTweets, postTweet } from '../lib/twitter-http.mjs';
 import { requestTelegramApproval } from '../lib/approval.mjs';
 import { detectLanguage } from '../lib/language.mjs';
-import { generateComment } from '../lib/ai-commenter.mjs';
+import { generateCommentOptions } from '../lib/ai-commenter.mjs';
+import { scoreTweet } from '../lib/tweet-scoring.mjs';
 import { alreadyCommented, markCommented } from '../lib/store.mjs';
 import { waitForSlot, postSleep } from '../lib/rate-limiter.mjs';
 import { sendAlert } from '../lib/telegram.mjs';
@@ -27,10 +28,15 @@ export async function runListMode(cfg, log) {
         if (t.isRetweet) continue;
         if (seen.has(t.id)) continue;
         if (alreadyCommented(t.id)) continue;
+        const scored = scoreTweet(t, cfg);
+        if (scored.shouldSkip) {
+          log(`[mode-A] skip ${t.id} @${t.author} score=${scored.score}: ${scored.reason}`);
+          continue;
+        }
         seen.add(t.id);
-        pool.push(t);
+        pool.push({ ...t, score: scored.score, scoreReason: scored.reason });
       }
-      log(`[mode-A] list ${id}: pool size now ${pool.length}`);
+      log(`[mode-A] list ${id}: candidate pool size now ${pool.length}`);
     } catch (e) {
       log(`[mode-A] list ${id} fetch failed: ${e.message}`);
       if (/401|403/.test(e.message)) {
@@ -40,20 +46,25 @@ export async function runListMode(cfg, log) {
     }
   }
 
-  pool.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  pool.sort((a, b) => {
+    if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
 
-  for (const t of pool) {
+  const maxCandidates = Number(cfg.scoring?.maxCandidatesPerCycle) || 10;
+  for (const t of pool.slice(0, maxCandidates)) {
     await waitForSlot(cfg, log);
     const langSetting = cfg.modeA?.language || 'auto';
     const lang = langSetting === 'auto' ? detectLanguage(t.fullText) : langSetting;
 
-    let comment;
+    let options;
     try {
-      comment = await generateComment({
+      options = await generateCommentOptions({
         tweetText: t.fullText,
         lang,
         style: cfg.modeA?.stylePrompt || '',
         ai: cfg.ai,
+        count: Number(cfg.approval?.optionsCount) || 3,
       });
     } catch (e) {
       log(`[mode-A] AI fail for ${t.id}: ${e.message}`);
@@ -62,7 +73,13 @@ export async function runListMode(cfg, log) {
 
     let approval;
     try {
-      approval = await requestTelegramApproval({ cfg, tweet: t, comment }, log);
+      approval = await requestTelegramApproval({
+        cfg,
+        tweet: t,
+        options,
+        score: t.score,
+        reason: t.scoreReason,
+      }, log);
     } catch (e) {
       log(`[mode-A] approval fail for ${t.id}: ${e.message}`);
       continue;
@@ -72,10 +89,11 @@ export async function runListMode(cfg, log) {
       continue;
     }
 
+    const comment = approval.comment || options[0];
     try {
       await postTweet(comment, cfg.cookiesFile, { replyToId: t.id });
       markCommented(t.id, t.author);
-      log(`[mode-A] OK reply ${t.id} @${t.author} lang=${lang} "${comment.slice(0, 60)}..."`);
+      log(`[mode-A] OK reply ${t.id} @${t.author} score=${t.score} lang=${lang} "${comment.slice(0, 60)}..."`);
     } catch (e) {
       log(`[mode-A] post fail ${t.id}: ${e.message}`);
       if (/RATE_LIMITED/.test(e.message)) {
