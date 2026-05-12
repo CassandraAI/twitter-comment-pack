@@ -4,9 +4,10 @@ This fork now supports a safer MVP flow for Mode A:
 
 ```txt
 Fetch tweets from configured X lists
-AI generates a reply candidate
+Score and filter candidates
+AI generates 3 reply options
 Telegram sends the candidate with buttons
-You click Post or Skip
+You click Post 1 / Post 2 / Post 3 / Skip
 Only approved replies are posted to X
 ```
 
@@ -19,7 +20,12 @@ Add this block to `data/config.json`:
   "approval": {
     "enabled": true,
     "mode": "telegram",
-    "timeoutMs": 600000
+    "timeoutMs": 600000,
+    "optionsCount": 3
+  },
+  "scoring": {
+    "minScore": 45,
+    "maxCandidatesPerCycle": 10
   }
 }
 ```
@@ -61,6 +67,34 @@ For an account with history and normal human activity, test gradually:
 
 Avoid aggressive reply volume. The goal is high-quality human-approved replies, not mass comment spam.
 
+## Scoring
+
+`src/lib/tweet-scoring.mjs` gives higher scores to tweets related to:
+
+- crypto: BTC, ETH, SOL, stablecoins, memecoins, DeFi, on-chain, wallets, exchanges
+- macro: Fed, FOMC, CPI, inflation, rates, liquidity, DXY, USD, gold, oil
+- geopolitics/policy: SEC, ETF, regulation, sanctions, election, geopolitics, war, tariffs
+- market meme language: pump, dump, liquidation, rekt, FOMO, FUD, degen, charts
+
+It blocks obvious risky/spam patterns such as:
+
+- giveaway / claim / connect wallet
+- seed phrase / private key
+- follow-back spam
+- external links
+- Telegram/Discord group promo
+
+Tune strictness with:
+
+```json
+"scoring": {
+  "minScore": 45,
+  "maxCandidatesPerCycle": 10
+}
+```
+
+Raise `minScore` to 55-65 for stricter filtering. Lower it to 35-40 if too few candidates appear.
+
 ## Runtime behavior
 
 When the bot finds a candidate, Telegram will show:
@@ -68,7 +102,8 @@ When the bot finds a candidate, Telegram will show:
 - original tweet text
 - author
 - tweet URL
-- AI reply suggestion
-- Post / Skip buttons
+- score and reason
+- 3 AI reply suggestions
+- Post 1 / Post 2 / Post 3 / Skip buttons
 
 If no button is clicked before `timeoutMs`, the candidate is skipped.
