@@ -39,6 +39,7 @@ export function initStore(dbPath = 'data/store.db') {
     CREATE INDEX IF NOT EXISTS idx_replies_posted_ts ON replies(posted_ts);
     CREATE INDEX IF NOT EXISTS idx_replies_source_tweet_id ON replies(source_tweet_id);
     CREATE INDEX IF NOT EXISTS idx_replies_reply_tweet_id ON replies(reply_tweet_id);
+    CREATE INDEX IF NOT EXISTS idx_replies_author_ts ON replies(author, posted_ts);
 
     CREATE TABLE IF NOT EXISTS skipped_candidates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,6 +137,16 @@ export function updateReplyMetrics({ replyTweetId, likeCount, replyCount, retwee
     Number.isFinite(quoteCount) ? quoteCount : null,
     replyTweetId,
   );
+}
+
+export function countRepliesSince(ts) {
+  if (!db) return 0;
+  return db.prepare('SELECT COUNT(*) AS c FROM replies WHERE posted_ts >= ?').get(ts).c;
+}
+
+export function countRepliesByAuthorSince(author, ts) {
+  if (!db || !author) return 0;
+  return db.prepare('SELECT COUNT(*) AS c FROM replies WHERE author = ? AND posted_ts >= ?').get(author, ts).c;
 }
 
 export function recentReplies(limit = 50) {
