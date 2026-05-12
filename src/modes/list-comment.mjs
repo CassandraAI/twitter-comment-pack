@@ -1,8 +1,9 @@
 /**
- * Mode A — crawl one or more lists, comment on each unique tweet using
- * the configured language + style.
+ * Mode A — crawl one or more lists, generate reply candidates, then either
+ * post directly or ask for Telegram approval depending on config.approval.
  */
 import { fetchListTweets, postTweet } from '../lib/twitter-http.mjs';
+import { requestTelegramApproval } from '../lib/approval.mjs';
 import { detectLanguage } from '../lib/language.mjs';
 import { generateComment } from '../lib/ai-commenter.mjs';
 import { alreadyCommented, markCommented } from '../lib/store.mjs';
@@ -56,6 +57,18 @@ export async function runListMode(cfg, log) {
       });
     } catch (e) {
       log(`[mode-A] AI fail for ${t.id}: ${e.message}`);
+      continue;
+    }
+
+    let approval;
+    try {
+      approval = await requestTelegramApproval({ cfg, tweet: t, comment }, log);
+    } catch (e) {
+      log(`[mode-A] approval fail for ${t.id}: ${e.message}`);
+      continue;
+    }
+    if (approval.action !== 'post') {
+      log(`[mode-A] skipped ${t.id} @${t.author} by ${approval.source}`);
       continue;
     }
 
