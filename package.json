@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node src/index.mjs",
+    "once": "node src/index.mjs --once",
     "setup": "node setup-wizard.mjs",
     "doctor": "node scripts/doctor.mjs",
     "analytics": "node scripts/analytics.mjs",
