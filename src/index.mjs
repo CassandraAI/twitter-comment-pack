@@ -12,6 +12,8 @@ import { runHybridMode } from './modes/hybrid.mjs';
 import { runWarmup } from './warmup.mjs';
 
 const DEBUG = process.argv.includes('--debug');
+const ONCE = process.argv.includes('--once');
+const NO_WARMUP = process.argv.includes('--no-warmup');
 const RUN_LOG = 'data/run.log';
 
 function log(msg) {
@@ -26,28 +28,34 @@ function log(msg) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+async function runConfiguredMode(cfg) {
+  if (cfg.mode === 'A') await runListMode(cfg, log);
+  else if (cfg.mode === 'B') await runAmplifyMode(cfg, log);
+  else if (cfg.mode === 'C') await runHybridMode(cfg, log);
+}
+
 async function main() {
   log('Twitter Comment Pack starting...');
   const cfg = loadConfig();
   initStore('data/store.db');
-  log(`Mode: ${cfg.mode} | AI: ${cfg.ai.provider} | Rate: ${cfg.commentsPerHour}/hr`);
+  log(`Mode: ${cfg.mode} | AI: ${cfg.ai.provider} | Rate: ${cfg.commentsPerHour}/hr | once=${ONCE}`);
 
   await sendAlert(cfg.telegram?.botToken, cfg.telegram?.chatId,
-    `[twitter-comment-pack] started in mode ${cfg.mode}`);
+    `[twitter-comment-pack] started in mode ${cfg.mode}${ONCE ? ' (once)' : ''}`);
 
-  // Schedule background session check every 2h, plus once on startup
+  // Schedule background session check every 2h, plus once on startup.
   const runHealth = async () => {
     try { await runWarmup(cfg, DEBUG); } catch {}
   };
-  runHealth();
-  setInterval(runHealth, 2 * 60 * 60 * 1000);
+  if (!NO_WARMUP) {
+    runHealth();
+    if (!ONCE) setInterval(runHealth, 2 * 60 * 60 * 1000);
+  }
 
   // Main mode loop
   while (true) {
     try {
-      if (cfg.mode === 'A') await runListMode(cfg, log);
-      else if (cfg.mode === 'B') await runAmplifyMode(cfg, log);
-      else if (cfg.mode === 'C') await runHybridMode(cfg, log);
+      await runConfiguredMode(cfg);
     } catch (e) {
       log(`Loop error: ${e.message}`);
       if (/SESSION_EXPIRED|401|403/.test(e.message)) {
@@ -56,6 +64,12 @@ async function main() {
         process.exit(1);
       }
     }
+
+    if (ONCE) {
+      log('One-cycle run complete. Exiting.');
+      return;
+    }
+
     // Sleep between full cycles
     const cycleSleep = 5 * 60 * 1000 + Math.floor(Math.random() * 5 * 60 * 1000);
     log(`Cycle done. Sleeping ${Math.round(cycleSleep / 60000)} min before next cycle.`);
